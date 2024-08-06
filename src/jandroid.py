@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 import logging
@@ -30,7 +31,7 @@ class Jandroid:
         # Set initial logging config.
         logging.basicConfig(
             stream=sys.stdout,
-            format='%(levelname)-8s %(message)s',
+            format='%(levelname)-8s %(message)s [%(filename)s:%(lineno)s]',
             level=logging.INFO
         )
 
@@ -43,6 +44,7 @@ class Jandroid:
         self.bool_generate_graph = False
         self.graph_type = 'neo4j'
         self.analysis_platform = 'android'
+        self.log_level = 'info'
         
         # Set values from function arguments.
         if path_app_folder != None:
@@ -51,6 +53,8 @@ class Jandroid:
             self.bool_generate_graph = bool_generate_graph
         if pull_source != None:
             self.pull_source = pull_source
+        if analysis_platform != None:
+            self.analysis_platform = analysis_platform
 
         # Also check passed args.
         self.argparser = None
@@ -142,11 +146,34 @@ class Jandroid:
                    + 'Use "-g neo4j" to output to a Neo4j database. '
                    + 'Requires that a Neo4j database be up and '
                    + 'running on http://localhost:7474 '
-                   + 'with username:neo4j and password:n3o4j '
+                   + 'with username:neo4j and password:n3o4jn3o4j '
                    + '(or user-specified values from config). '
                    + 'Or use "-g visjs" to create a vis.js network in html '
                    + 'that can be viewed from the output folder. '
                    + 'Or use "-g both" to generate both.'
+        )
+        self.argparser.add_argument(
+            '-v',
+            '--verbosity',
+            '--log-level',
+            choices = ['debug', 'info', 'warning', 'error', 'critical'],
+            action = 'store',
+            nargs='?',
+            const=self.log_level,
+            help = 'set logging level. '
+                   + 'Use "-v debug" to show all debug messages. '
+                   + 'Use "-v info" to show only info messages. '
+                   + 'Use "-v warning" to show warnings and errors. '
+                   + 'Use "-v error" to show only errors. '
+                   + 'Use "-v critical" to show only critical errors.'
+        )
+        self.argparser.add_argument(
+            '-t',
+            '--template',
+            type = str,
+            action = 'store',
+            help = 'specify template to use for analysis. '
+                     + 'Provide filename as argument.'
         )
 
     def fn_main(self, gui=False):
@@ -294,21 +321,26 @@ class Jandroid:
         )
         log_level = current_log_level
 
-        # Get desired log level from config file.
-        config = configparser.ConfigParser()
-        try:
-            config.read(self.path_config_file)
-        except Exception as e:
-            logging.critical(
-                'Error reading config file: '
-                + str(e)
-            )
-            sys.exit(1)
-        if config.has_section('LOGGING'):
-            if config.has_option('LOGGING', 'LOG_LEVEL'):
-                log_level = (
-                    config['LOGGING']['LOG_LEVEL']
+        # Check if user has set a log level via flag
+        #  (this will override the config file).
+        if self.argparser.parse_args().verbosity:
+            log_level = self.argparser.parse_args().verbosity
+        else:
+            # Get desired log level from config file.
+            config = configparser.ConfigParser()
+            try:
+                config.read(self.path_config_file)
+            except Exception as e:
+                logging.critical(
+                    'Error reading config file: '
+                    + str(e)
                 )
+                sys.exit(1)
+            if config.has_section('LOGGING'):
+                if config.has_option('LOGGING', 'LOG_LEVEL'):
+                    log_level = (
+                        config['LOGGING']['LOG_LEVEL']
+                    )
 
         # Check whether desired log level is an accepted value.
         # If yes, set the log level.
@@ -382,7 +414,7 @@ class Jandroid:
         )
         try:
             self.master_template_object = \
-                inst_template_parser.fn_create_master_template_object()
+                inst_template_parser.fn_create_master_template_object(self.argparser.parse_args().template)
         except JandroidException as e:
                 logging.critical(
                     '['

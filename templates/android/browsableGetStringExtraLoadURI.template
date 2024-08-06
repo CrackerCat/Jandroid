@@ -1,0 +1,29 @@
+{
+    "METADATA": {
+        "NAME": "browsableGetStringExtraLoadURI"
+    },   
+    "MANIFESTPARAMS": {
+        "BASEPATH": "manifest->application->activity OR manifest->application->activity-alias",
+        "SEARCHPATH": {
+            "intent-filter": {
+                "category": {
+                    "LOOKFOR": {
+                        "TAGVALUEMATCH": "<NAMESPACE>:name=android.intent.category.BROWSABLE"
+                    }
+                }
+            }
+        },
+        "RETURN": ["<smali>:<NAMESPACE>:name AS @browsable_activity_name"]
+    },
+    "CODEPARAMS": {
+        "TRACE": {
+            "TRACETYPE": "ADVANCED",
+            "TRACEFROM": "ARGTO <method>:Landroid/webkit/WebView;->loadUrl ARGINDEX 1",
+            "TRACELENGTHMAX":10,
+            "TRACETO": "RESULTOF Landroid/content/Intent;->getStringExtra(Ljava/lang/String;)Ljava/lang/String;",
+            "RETURN": "<tracepath> AS @tracepath_stringextra_to_loaduri",
+            "TRACELOCATION": "@browsable_activity_name"
+        }
+    },
+    "GRAPH": "@tracepath_stringextra_to_loaduri WITH <method>:<desc>:<class> AS attribute=nodename"
+}

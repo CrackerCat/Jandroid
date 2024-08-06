@@ -68,7 +68,7 @@ class ManifestAnalyser:
         if 'BASEPATH' in manifest_obj:
             basepath_string = manifest_obj['BASEPATH']
             split_basepath = basepath_string.split(' OR ')
-            basepaths = [basepath.strip().replace('manifest->','')
+            basepaths = [basepath.strip().replace('manifest->','').replace('manifest','')
                 for basepath in split_basepath]
             logging.debug(
                 'Identified the following basepaths for '
@@ -80,21 +80,22 @@ class ManifestAnalyser:
         #  for ltree search.
         xml_parser_basepaths = ['./' + basepath.replace('->', '/')
             for basepath in basepaths]
-
         # Get all the paths that satisfy the basepath.
         #  e.g., a basepath of manifest->application->activity
         #  would result in a list of all activities declared within
         #  the manifest.
         starting_points = []
-        for xml_parser_basepath in xml_parser_basepaths:
-            starting_points = starting_points \
-                + self.apk_manifest_root.findall(xml_parser_basepath)
+        if xml_parser_basepaths != ['./']:
+            for xml_parser_basepath in xml_parser_basepaths:
+                starting_points = starting_points \
+                    + self.apk_manifest_root.findall(xml_parser_basepath)
+        else:
+            starting_points = [self.apk_manifest_root]
         logging.debug(
             'Identified '
             + str(len(starting_points))
             + ' starting points within manifest.'
         )
-
         # Begin at a starting point and recursively search through
         #  manifest, matching it up against the bug template at each level.
         for starting_point in starting_points:
@@ -201,23 +202,49 @@ class ManifestAnalyser:
                 + str(key)
                 + '".'
             )
-            #Currently looking at key "intent-filter".
 
+            # If the key has an OR we need to split it.
+            split_keys = [key]
+            if ' OR ' in key:
+                split_keys = key.split(' OR ')
+
+            #Currently looking at key "intent-filter".
             # If the subsequent level is also a dictionary,
-            #  then we need to do all this all over again.
+            #  then we need to do all this all over again.element
+            # Uses the main key instead of the split key.
             if type(current_template[key]) is dict:
-                xml_search_results = current_xml_tree.findall(key)
-                logging.debug(
-                    str(len(xml_search_results))
-                    + ' XML results found for key "'
-                    + str(key)
-                    + '".'
-                )
-                for xml_search_result in xml_search_results:
-                    self.fn_recursive_analysis(
-                        current_template[key],
-                        xml_search_result
+                for split_key in split_keys:
+                    xml_search_results = current_xml_tree.findall(split_key)
+                    logging.debug(
+                        str(len(xml_search_results))
+                        + ' XML results found for key "'
+                        + str(split_key)
+                        + '".'
                     )
+                    if len(xml_search_results) == 0 and current_xml_tree.tag == split_key:
+                        logging.warning(
+                            'No results found for key "'
+                            + str(split_key)
+                            + '". Checking current XML tree.'
+                        )
+                        self.fn_recursive_analysis(
+                            current_template[key],
+                            current_xml_tree
+                        )
+                        
+                                                    
+                    for xml_search_result in xml_search_results:
+                        logging.debug(
+                            'Recursively analysing '
+                            + str(xml_search_result)
+                            + ' against template '
+                            + str(current_template[key])
+                            + '.'
+                        )
+                        self.fn_recursive_analysis(
+                            current_template[key],
+                            xml_search_result
+                        )
         logging.debug(
             'Finished Analysing '
             + str(current_xml_tree)
@@ -446,6 +473,17 @@ class ManifestAnalyser:
                 lookfor_values.append(split_value.strip())
         else:
             lookfor_values = [lookfor_value]
+
+        # Parse any values that are previously defined in the template.
+        # This is useful for cases where we want to check if a tag value
+        #  matches the value of another tag.
+        for returnValue in self.current_returns:
+            for key in lookfor_values:
+                if key in returnValue:
+                    lookfor_values.remove(key)
+                    lookfor_values.append(returnValue[key])
+
+
 
         logging.debug(
             'Looking for tag(s) '

@@ -24,9 +24,10 @@ class TemplateParser:
         # Set mode.
         self.analysis_mode = arg_mode
         # Variable to hold list of template paths.
-        self.list_of_template_files = None        
+        self.list_of_template_files = None 
+        self.templateFilter = None       
 
-    def fn_create_master_template_object(self):
+    def fn_create_master_template_object(self, templateFilter):
         """Creates a "master template object" from templates.
         
         This function doesn't actually create the template object. 
@@ -37,6 +38,16 @@ class TemplateParser:
         :returns: object (typically dictionary) of all templates.
         """
         logging.info('Creating template object.')
+        if templateFilter:
+            # Check if ends in template
+            if not templateFilter.endswith('.template'):
+                templateFilter = templateFilter + '.template'
+            # Check if the template exists
+            if not os.path.exists(os.path.join(self.path_to_templates, templateFilter)):
+                logging.error('Template file does not exist: ' + templateFilter + ' proceeding without filter')
+            else:
+                logging.info('Only loading template: ' + templateFilter)
+                self.templateFilter = templateFilter
         # Create a list of templates.
         self.__fn_enumerate_templates()
         # Instantiate relevant class, based on analysis mode.
@@ -63,7 +74,7 @@ class TemplateParser:
             for name in os.listdir(self.path_to_templates)
                 if ((os.path.isfile(
                     os.path.join(self.path_to_templates, name)
-                )) and (name.endswith('.template')))
+                )) and (name.endswith('.template')) and (self.templateFilter is None or self.templateFilter == name)  )
         ]
         logging.info(
             str(len(self.list_of_template_files))
@@ -269,6 +280,8 @@ class AndroidTemplateParser:
                 }
             )
 
+        # Swap spaces for underscores in template name.
+        template_name = template_name.replace(' ', '_')
         # Check for duplicate template names.
         if template_name in self.output_template_object:
             raise JandroidException(
@@ -631,7 +644,21 @@ class AndroidTemplateParser:
         search_keywords_expected_structure = {
             'SEARCHFORMETHOD': {
                 'Required': False,
-                'Type': str
+                'Type': dict,
+                'Subkeys': {
+                    'METHOD': {
+                        'Required': True,
+                        'Type': str
+                    },
+                    'SEARCHLOCATION': {
+                        'Required': False,
+                        'Type': str
+                    },
+                    'RETURN': {
+                        'Required': False,
+                        'Type': str
+                    }
+                }
             },
             'SEARCHFORCALLTOMETHOD': {
                 'Required': False,
@@ -695,6 +722,24 @@ class AndroidTemplateParser:
                     }
                 }
             },
+            'SEARCHFORANNOTATION': {
+                'Required': False,
+                'Type': dict,
+                'Subkeys': {
+                    'STRING': {
+                        'Required': True,
+                        'Type': str
+                    },
+                    'SEARCHLOCATION': {
+                        'Required': False,
+                        'Type': str
+                    },
+                    'RETURN': {
+                        'Required': False,
+                        'Type': str
+                    }
+                }
+            }
         }
 
         # Check that the structure of the template matches the
@@ -712,8 +757,7 @@ class AndroidTemplateParser:
                 individual_search_obj = \
                     individual_code_search_obj[primary_search_type]
                 if ('SEARCHLOCATION' in individual_search_obj):
-                    if ((primary_search_type == 'SEARCHFORMETHOD') or 
-                            (primary_search_type == 'SEARCHFORCLASS') or 
+                    if ((primary_search_type == 'SEARCHFORCLASS') or 
                             (primary_search_type == 'SEARCHFORSTRING')):
                         raise JandroidException(
                             {
@@ -740,8 +784,7 @@ class AndroidTemplateParser:
                             )
 
                 if 'RETURN' in individual_search_obj:
-                    if ((primary_search_type == 'SEARCHFORMETHOD') or 
-                            (primary_search_type == 'SEARCHFORCLASS') or 
+                    if ((primary_search_type == 'SEARCHFORCLASS') or 
                             (primary_search_type == 'SEARCHFORSTRING')):
                         raise JandroidException(
                             {
@@ -849,6 +892,10 @@ class AndroidTemplateParser:
                 'Required': False,
                 'Type': int
             },
+            'TRACELOCATION' : {
+                'Required': False,
+                'Type': str
+            },
             'RETURN': {
                 'Required': False,
                 'Type': str
@@ -904,6 +951,17 @@ class AndroidTemplateParser:
                                     + ': BadReturnType',
                             'reason': 'Trace RETURN identifier must begin '
                                       + 'with "@tracepath_".'
+                        }
+                    )
+                
+            if 'TRACELOCATION' in individual_code_trace_obj:
+                trace_location = individual_code_trace_obj['TRACELOCATION']
+                if type(trace_location) is not str:
+                    raise JandroidException(
+                        {
+                            'type': str(os.path.basename(__file__))
+                                    + ': BadElementType',
+                            'reason': 'TRACELOCATION must be string.'
                         }
                     )
             

@@ -182,6 +182,14 @@ class CodeSearch:
                 'CLASS',
                 search_object['CLASS']
             )
+        elif search_type == 'SEARCHFORANNOTATION':
+            logging.debug('Searching for annotation.')
+            fn_to_execute = self.fn_search_for_annotation
+            items_to_search = self.fn_identify_search_items(
+                'STRING',
+                search_object['STRING']
+            )
+
         # -------------------------------------
         # Execute the function.
         return fn_to_execute(search_object, items_to_search)
@@ -328,6 +336,8 @@ class CodeSearch:
         :param methods_to_search: list of methods to search for
         :returns: boolean indicating whether the method was found within APK
         """        
+        bool_search_satisfied = False
+        all_methods = []
         for method_to_search in methods_to_search:
             # Get the class, method and descriptor parts.
             # Note that the method MUST be specified in smali format.
@@ -340,7 +350,6 @@ class CodeSearch:
             classes_inc_sub.extend(
                 self.inst_analysis_utils.fn_find_subclasses(class_part)
             )
-            
             # Search for all class/method combinations.
             for one_class in classes_inc_sub:
                 logging.debug(
@@ -358,11 +367,20 @@ class CodeSearch:
                     )
                 )
         
-        # If at least one method is present.
-        if len(all_methods) == 0:
-            return False
-        else:
-            return True
+            # If no results were returned, then we needn't waste any more time.
+            if len(all_methods) == 0:
+                continue 
+            
+            bool_one_search_satisfied = \
+                self.fn_process_search_location_and_returns(
+                    method_search_object,
+                    all_methods
+                )       
+            if bool_one_search_satisfied == True:
+                bool_search_satisfied = True
+
+
+        return bool_search_satisfied
 
     def fn_search_for_presence_of_class(self, class_search_object,
                                         classes_to_search):
@@ -371,7 +389,8 @@ class CodeSearch:
         :param class_search_object: object containing search parameters
         :param search_strings: list of classes to search for
         :returns: boolean indicating whether the class was found within APK
-        """        
+        """   
+        all_classes = []     
         for class_to_search in classes_to_search:
             # We consider subclasses as well.
             classes_inc_sub = [class_to_search]
@@ -511,6 +530,43 @@ class CodeSearch:
                     class_search_object,
                     calling_methods
                 )       
+            if bool_one_search_satisfied == True:
+                bool_search_satisfied = True
+        return bool_search_satisfied
+    
+    def fn_search_for_annotation(self, annotation_search_object, search_strings):
+        """Searches for the presence of an annotation.
+        
+        :param annotation_search_object: object containing search parameters
+        :param search_strings: list of annotations to search for
+        :returns: boolean indicating whether the annotation was found
+        """
+        bool_search_satisfied = False
+        for search_string in search_strings:
+            logging.debug('Searching for annotation: "' + search_string + '".')
+            
+            satisfying_methods = []
+
+            calling_methods = self.inst_analysis_utils.fn_get_all_annotations()
+            for method in calling_methods:
+                for annotation in calling_methods[method]['annotations']:
+                    if annotation == search_string:
+                        # Get the class, method and descriptor parts.
+                        logging.debug("Method :" + method)
+                        # Convert method signature to encoded method object.
+                        satisfying_methods.append(
+                            calling_methods[method]['encoded_method']
+                        )
+            # If no results were returned, then we needn't waste any more time.
+            if len(satisfying_methods) == 0:
+                continue
+
+            # Check search locations and RETURNs.
+            bool_one_search_satisfied = \
+                self.fn_process_search_location_and_returns(
+                    annotation_search_object,
+                    satisfying_methods
+                )   
             if bool_one_search_satisfied == True:
                 bool_search_satisfied = True
         return bool_search_satisfied

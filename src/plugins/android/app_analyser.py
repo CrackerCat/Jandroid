@@ -8,6 +8,7 @@ import fnmatch
 import logging
 import configparser
 from multiprocessing import Process, JoinableQueue, active_children
+import traceback
 from androguard.misc import *
 from androguard.core import *
 from manifest_analyser import ManifestAnalyser
@@ -158,7 +159,8 @@ class AnalyseApps():
                     process_send_queue,
                     process_receive_queue,
                     num_processes
-                )
+                ),
+                daemon=True
             )
             
             # Start the worker process and append to process list.
@@ -252,7 +254,7 @@ class AnalyseApps():
             # If error is not None, "status", or "logging", then
             #  something must have gone wrong.
             else:
-                logging.warning(
+                logging.error(
                     'Error analysing '
                     + app_filename
                     + ': ['
@@ -323,6 +325,7 @@ class AnalyseApps():
     def fn_exit_gracefully(self, signum, frame):
         for process in self.process_list:
             process.kill()
+        sys.exit(1)
             
     def fn_create_custom_graph(self):
         self.inst_custom_grapher.fn_create_custom_graph(
@@ -604,29 +607,42 @@ class WorkerAnalyseApp:
             # Object to store link parameters
             #  (between different types of searches).
             self.current_links = {}
+            try :
+                # Start search enumeration.
+                for searchparams_key in \
+                        self.master_bug_object[bug]:
+                    if searchparams_key == 'MANIFESTPARAMS':
+                        self.fn_handle_manifest_analysis(bug)
+                    if searchparams_key == 'CODEPARAMS':
+                        self.fn_handle_code_analysis(bug)
+                
+                # The bug element count and satisfied count will have been
+                #  incremented during the analysis. If they are equal, then
+                #  all searchable elements were matched, i.e., the bug template
+                #  was satisfied.
+                if (self.current_bug_search_types == \
+                        self.current_bug_search_outcomes):
+                    self.current_app_bug_obj[bug] = True
 
-            # Start search enumeration.
-            for searchparams_key in \
-                    self.master_bug_object[bug]:
-                print(searchparams_key)
-                if searchparams_key == 'MANIFESTPARAMS':
-                    self.fn_handle_manifest_analysis(bug)
-                if searchparams_key == 'CODEPARAMS':
-                    self.fn_handle_code_analysis(bug)
-            
-            # The bug element count and satisfied count will have been
-            #  incremented during the analysis. If they are equal, then
-            #  all searchable elements were matched, i.e., the bug template
-            #  was satisfied.
-            if (self.current_bug_search_types == \
-                    self.current_bug_search_outcomes):
-                self.current_app_bug_obj[bug] = True
+                    # We process graphables only if the outcome is True.
+                    # The fact that we are in this if condition means the outcome
+                    #  was True.
+                    if 'GRAPH' in self.master_bug_object[bug]:
+                        self.fn_process_graphables(bug)
+            except Exception as e:
+                # If an error occurs during analysis, log it.
+                # Throwing the exception here prevents other functional templates from running
+                logging.error(
+                    'Error analysing bug '
+                    + str(bug)
+                    + ' in app '
+                    + str(self.current_app_filename)
+                    + ': '
+                    + str(e)
+                    + '.'
+                    + traceback.format_exc()
+                )
 
-                # We process graphables only if the outcome is True.
-                # The fact that we are in this if condition means the outcome
-                #  was True.
-                if 'GRAPH' in self.master_bug_object[bug]:
-                    self.fn_process_graphables(bug)
 
     def fn_handle_manifest_analysis(self, bug):
         """Calls the manifest analysis script based on bug template.
@@ -692,12 +708,12 @@ class WorkerAnalyseApp:
         :param bug: current bug being analysed.
         """
 
-        print("HANDLING CODE ANALYSIS")
+        logging.debug("HANDLING CODE ANALYSIS")
 
         # If there is no code search to be performed, return.
         code_obj = self.master_bug_object[bug]['CODEPARAMS']
         if code_obj == {}:
-            print("RTN EMPTY")
+            logging.debug("RTN EMPTY")
             return
 
         # If code search is to be performed,

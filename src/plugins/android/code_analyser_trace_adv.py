@@ -110,7 +110,11 @@ class CodeTraceAdvanced:
                     trace_to_item
                 )
                 if bool_single_trace_satisfied == True:
-                    bool_satisfied = True
+                    bool_checked_TRACELOCATION = self.fn_check_trace_location(
+                        code_trace_template
+                    )
+                    if bool_checked_TRACELOCATION == True:
+                        bool_satisfied = True
         # logging.debug("LOCATED SINKS")
         if bool_satisfied == True:
             if 'RETURN' in code_trace_template:
@@ -130,6 +134,49 @@ class CodeTraceAdvanced:
         logging.debug(self.output_chains)
         return [bool_satisfied, self.output_chains]
     
+    def fn_check_trace_location(self, code_trace_template):
+        """Removes chain if start_class does not match TRACELOCATION
+
+        :param code_trace_template: code template containing TRACELOCATION
+        """
+        if 'TRACELOCATION' in code_trace_template:
+            trace_location = code_trace_template['TRACELOCATION']
+            class_type = '<class>'
+            class_value = trace_location
+            if ":" in trace_location:
+                trace_location_split = trace_location.split(":")
+                class_type = trace_location_split[0]
+                class_value = trace_location_split[1]
+
+            else:
+                class_value = trace_location
+
+            if class_value[0] == '@':
+                class_values = self.inst_analysis_utils.fn_get_linked_items(
+                    self.current_links,
+                    class_value
+                )
+                if class_values == None or len(class_values) == 0:
+                    logging.error(f"Could not find linked item {class_value}")
+                    return False
+                class_value = class_values[0]
+
+            for chain in self.output_chains:
+                classes = chain.split(',')
+                satisfied = False
+                for step in classes:
+                    if class_value in step:
+                        satisfied = True
+                        break
+                if not satisfied:
+                    self.output_chains.remove(chain)
+
+            logging.debug(f"output_chains: {self.output_chains}")
+        else:
+            return True
+        return len(self.output_chains) != 0
+
+
     def fn_trace_through_code(self, trace_from, trace_to):
         """Calls methods to parse arguments and starts trace handler.
         
@@ -543,7 +590,7 @@ class CodeTraceAdvanced:
         """
         field_components = field.split(' ')
         field = field_components[0] + ':' + field_components[1]
-        field = field.replace('[','\[')
+        field = field.replace('[',r'\[')
         all_fields = self.androguard_dx.find_fields(field)
         all_field_xref_to = []
         for field in all_fields:
@@ -630,7 +677,7 @@ class CodeTraceAdvanced:
             #  <init> method of this class.
             if combined_method_string in self.all_annotations:
                 if ('Landroid/webkit/JavascriptInterface;' in 
-                        self.all_annotations[combined_method_string]):
+                        self.all_annotations[combined_method_string]['annotations']):
                     method_part = '<init>'
                     desc_part = '.'
             # Get starting points.
@@ -663,7 +710,7 @@ class CodeTraceAdvanced:
                 num_locals = self.fn_get_locals(starting_point)
                 if starting_point_string in self.all_annotations:
                     if ('Landroid/webkit/JavascriptInterface;' in 
-                            self.all_annotations[starting_point_string]):
+                            self.all_annotations[starting_point_string]['annotations']):
                         chain = chain + ',' + starting_point_string
                         starting_point_string = starting_point.get_class_name() \
                                                 + '-><init>'
@@ -850,6 +897,41 @@ class CodeTraceAdvanced:
 
 
                     return
+                # Handle branch instructions.
+                elif ((opcode in [0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D] and op_index == 0)):
+                    logging.debug("branch found")
+                    # # If this is a branch instruction, then we need to trace both the branch and the previous instruction.
+                    # [prevBool, prevChain] = self.fn_trace_v_reverse(
+                    #     method,
+                    #     i-1,
+                    #     register,
+                    #     chain
+                    # )
+                    # branch = operands[1][1]
+                    # logging.error(f"branch: {operands}")
+                    # branchBool = False
+                    # branchChain = []
+                    # if branch < num_locals:
+                    #     return self.fn_trace_v_reverse(
+                    #         method,
+                    #         i-1,
+                    #         branch,
+                    #         chain
+                    #     )
+                    # else:
+                    #     logging.error(f"method_string")
+                    #     logging.error(method_string)
+                    #     logging.error(f"new_chain")
+                    #     logging.error(new_chain)
+                    #     # return self.fn_trace_reverse(
+                    #         # method_string,
+                    #         # new_chain,
+                    #         # branch - num_locals
+                    #     # )
+                    # return
+
+                      
+
                 # aget. We trace the source, and stop tracing the
                 #  current register (because it would have had a different
                 #  value prior to aget).
@@ -937,6 +1019,10 @@ class CodeTraceAdvanced:
                             new_chain = ','.join(temp)
                             return True, new_chain
 
+
+                else:
+                    logging.debug("No condition met")
+                    logging.debug(f"opcode: {opcode}")
                     # TODO: finish this
                     # If this is a class instantiation, then trace other args.
                     # COmmenting out thsi for now until we find better way of looking at only instanciations
@@ -981,7 +1067,7 @@ class CodeTraceAdvanced:
         """
         field_components = field.split(' ')
         field = field_components[0] + ':' + field_components[1]
-        field = field.replace('[','\[')
+        field = field.replace('[',r'\[')
         all_fields = self.androguard_dx.find_fields(field)
         all_field_xref_from = []
         for field in all_fields:
@@ -1155,9 +1241,9 @@ class CodeTraceAdvanced:
             logging.debug(f"operands: {all_operands}")
             method_operand = all_operands[-1][-1]
             if called_method in method_operand:
-                print(called_method)
-                print(method_operand)
-                print(f"reg_position looked for: {reg_position}")
+                logging.debug(called_method)
+                logging.debug(method_operand)
+                logging.debug(f"reg_position looked for: {reg_position}")
             
                 if reg_position >= (len(all_operands)-1):
                     reg_position = len(all_operands)-2
@@ -1395,7 +1481,7 @@ class CodeTraceAdvanced:
         jsinterface_classes = set()
         for method in self.all_annotations:
             if ('Landroid/webkit/JavascriptInterface;' in 
-                    self.all_annotations[method]):
+                    self.all_annotations[method]['annotations']):
                 jsinterface_methods.add(method)
                 class_part = method.split('->')[0]
                 jsinterface_classes.add(class_part)
